@@ -1,0 +1,85 @@
+#!/bin/bash
+
+usage () {
+    echo "usage: loop_videos [file] [totalsecs]"
+    echo "       The file contains the video(s) you want to loop, each on a seperate line."
+    echo "       The totalsecs is the length, in seconds, you want to output video(s) to be."
+    echo "       Note: total length of output video may be longer than specififed, but it will never be shorter."
+}
+
+##Error Check##
+    error=0
+
+    #correct number of arguments
+    if [ $# != 2 ]; then
+      usage
+      exit
+    fi
+
+    #check if file exists
+    if [ ! -f $1 ]; then
+        echo "File does not exist."
+        error=1
+    fi
+
+    #check is totalsecs is a valid number
+    if ! [[ $2 =~ ^[1-9][0-9]*$ ]]; then
+        echo "Totalsecs is not a valid number."
+        error=1
+    fi
+
+    #if there was an error, exit
+    if [ $error == 1 ]; then
+        usage
+        exit
+    fi
+
+
+files=$1
+totalsecs=$2
+tmpfile=".tmplooptmp.txt"
+outputlocation=~/Desktop/looped_videos
+
+#read through specified file [line by line]
+j=1
+mkdir -p $outputlocation
+while read file; do
+
+    #stackoverflow.com/questions/965053/extract-filename-and-extension-in-bash
+    filename=$(basename "$file")
+    extension="${filename##*.}"
+    filename="${filename%.*}"
+
+    ##Error Check##
+        #check to see if file exists
+        if [ ! -f $file ]; then
+            echo "$file does not exist."
+            continue
+        fi
+
+        #check to see if extension is supported
+        count=`ffmpeg -formats 2> /dev/null | grep -s -c $extension`
+        if [ $count == 0 ]; then
+            echo "$file is not a supported by ffmpeg."
+            continue
+        fi
+
+    #get the length of the video in milliseconds
+    millisec=$(mediainfo --Inform="General;%Duration%" $file)
+    #calculate the number of loops needed
+    sec=$(($millisec / 1000))
+    numloops=`python -c "from math import *; print(int(ceil(float($totalsecs)/float($sec))))"`
+
+    #create a file that lets ffmpeg know how many times it needs to loop
+    echo -n > $tmpfile
+    for((i = 0; i < $numloops; i++)); do
+        echo "file '$file'" >> $tmpfile
+    done
+
+    echo "Video concatation started for video $j"
+    ffmpeg -nostdin -f concat -i $tmpfile -c copy $outputlocation/$filename.loop.$extension 2> /dev/null
+
+    j=$(($j + 1))
+
+done < $files
+rm -f $tmpfile
